@@ -1,3 +1,4 @@
+
 require('dotenv').config();
 
 const Joi = require('joi');
@@ -46,6 +47,41 @@ const envSchema = Joi.object({
 
   JWT_EXPIRES_IN: Joi.string()
     .default('1h'),
+
+  JWT_REFRESH_SECRET: Joi.string()
+    .min(32)
+    .required(),
+
+  JWT_REFRESH_EXPIRES_IN: Joi.string()
+    .default('7d'),
+
+  // Email / SMTP Configuration
+  SMTP_HOST: Joi.string()
+    .allow('')
+    .default(''),
+
+  SMTP_PORT: Joi.number()
+    .port()
+    .default(587),
+
+  SMTP_SECURE: Joi.boolean()
+    .default(false),
+
+  SMTP_USER: Joi.string()
+    .allow('')
+    .default(''),
+
+  SMTP_PASS: Joi.string()
+    .allow('')
+    .default(''),
+
+  EMAIL_FROM: Joi.string()
+    .allow('')
+    .default(''),
+
+  PASSWORD_RESET_URL: Joi.string()
+    .uri()
+    .default('http://localhost:3000/reset-password'),
 
   LOG_LEVEL: Joi.string()
     .valid('fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent')
