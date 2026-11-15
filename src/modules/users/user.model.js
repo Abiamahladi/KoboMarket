@@ -1,3 +1,4 @@
+
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 
@@ -36,6 +37,16 @@ const userSchema = new mongoose.Schema(
       type: String,
       required: true,
       select: false
+    },
+
+    // Platform roles assigned to this user.
+    roles: {
+      type: [{
+        type: String,
+        enum: ['customer', 'vendor', 'admin']
+      }],
+      default: ['customer'],
+      required: true
     },
 
     status: {

@@ -1,9 +1,9 @@
+
 const User = require('../modules/users/user.model');
 const { verifyAccessToken } = require('../modules/auth/token.service');
 
 const authenticate = async (req, res, next) => {
   try {
-    // Read the Authorization header
     const authHeader = req.headers.authorization;
 
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -13,10 +13,8 @@ const authenticate = async (req, res, next) => {
       });
     }
 
-    // Extract the access token
     const token = authHeader.split(' ')[1];
 
-    // Verify the token
     let decoded;
 
     try {
@@ -30,10 +28,11 @@ const authenticate = async (req, res, next) => {
       });
     }
 
-    // Confirm that the user still exists
     const user = await User.findOne({
       userId: decoded.sub
-    }).select('userId firstName lastName email status');
+    }).select(
+      'userId firstName lastName email roles status'
+    );
 
     if (!user) {
       return res.status(401).json({
@@ -42,7 +41,6 @@ const authenticate = async (req, res, next) => {
       });
     }
 
-    // Check whether the account is active
     if (user.status !== 'active') {
       return res.status(403).json({
         success: false,
@@ -50,16 +48,15 @@ const authenticate = async (req, res, next) => {
       });
     }
 
-    // Attach authenticated user information to the request
     req.user = {
       id: user.userId,
       firstName: user.firstName,
       lastName: user.lastName,
-      email: user.email
+      email: user.email,
+      roles: user.roles || ['customer']
     };
 
     next();
-
   } catch (error) {
     next(error);
   }
