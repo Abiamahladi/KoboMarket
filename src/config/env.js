@@ -55,6 +55,17 @@ const envSchema = Joi.object({
   JWT_REFRESH_EXPIRES_IN: Joi.string()
     .default('7d'),
 
+  // Paystack Configuration
+  PAYSTACK_SECRET_KEY: Joi.string()
+    .required(),
+
+  PAYSTACK_PUBLIC_KEY: Joi.string()
+    .required(),
+
+  PAYSTACK_BASE_URL: Joi.string()
+    .uri()
+    .default('https://api.paystack.co'),
+
   // Email / SMTP Configuration
   SMTP_HOST: Joi.string()
     .allow('')
