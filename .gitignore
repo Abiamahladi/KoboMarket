@@ -25,3 +25,9 @@ dist/
 # IDE
 .vscode/
 .idea/
+
+# Local database backups
+backups/
+
+# MongoDB internal authentication key
+docker/mongodb/keyfile

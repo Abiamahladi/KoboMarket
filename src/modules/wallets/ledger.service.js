@@ -16,7 +16,8 @@ const ledgerService = {
     referenceType = null,
     referenceId = null,
     initiatedBy = null,
-    entries
+    entries,
+    transaction = null
   }) {
     if (!transactionType || !Array.isArray(entries) || entries.length < 2) {
       throw createError('A transaction requires a type and at least two entries');
@@ -48,7 +49,7 @@ const ledgerService = {
       throw createError('Ledger transaction is not balanced');
     }
 
-    return db.transaction(async (trx) => {
+    const execute = async (trx) => {
       const existing = await trx('ledger_transactions')
         .where({ idempotency_key: idempotencyKey })
         .first();
@@ -180,7 +181,11 @@ const ledgerService = {
         status: 'posted',
         duplicate: false
       };
-    });
+    };
+
+    return transaction
+      ? execute(transaction)
+      : db.transaction(execute);
   }
 };
 

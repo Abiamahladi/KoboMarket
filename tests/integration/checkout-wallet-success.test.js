@@ -1,0 +1,249 @@
+/** @jest-environment node */
+
+jest.setTimeout(60000);
+
+const crypto = require('node:crypto');
+const mongoose = require('mongoose');
+
+const env = require('../../src/config/env');
+const { db } = require('../../src/config/postgres');
+const { redis } = require('../../src/config/redis');
+const ledgerService = require('../../src/modules/wallets/ledger.service');
+
+const Product = require('../../src/modules/catalogue/product.model');
+const StockReservation = require('../../src/modules/checkout/stock-reservation.model');
+
+const { prepareCheckout } = require('../../src/modules/checkout/checkout.service');
+const { reserveOrderStock } = require('../../src/modules/checkout/checkout-stock.coordinator');
+const { completeWalletCheckout } = require('../../src/modules/checkout/checkout-completion.service');
+
+const makeId = () => crypto.randomUUID();
+
+describe('Successful wallet checkout and escrow', () => {
+  let userId;
+  let walletId;
+  let orderId;
+  let productId;
+  let fundingTransactionId;
+
+  beforeAll(async () => {
+    if (
+      env.NODE_ENV !== 'test' ||
+      env.POSTGRES_DB !== 'kobomarket_test' ||
+      new URL(env.MONGODB_URI).pathname !== '/kobomarket_test' ||
+      redis.options.db !== 15
+    ) {
+      throw new Error('Unsafe test database configuration');
+    }
+
+    await mongoose.connect(env.MONGODB_URI, {
+      directConnection: true,
+      serverSelectionTimeoutMS: 5000
+    });
+
+    // Create a fresh user for every test run.
+    // The isolated test users table requires only an ID.
+    // Never reuse a customer wallet from a previous test.
+    userId = makeId();
+
+    await db('users').insert({
+      id: userId
+    });
+
+    productId = makeId();
+
+    const [wallet] = await db('wallets')
+      .insert({
+        user_id: userId,
+        wallet_type: 'customer',
+        currency: 'NGN',
+        status: 'active'
+      })
+      .returning('*');
+
+    walletId = wallet.id;
+
+    await db('wallet_balances').insert({
+      wallet_id: walletId,
+      available_balance: 0,
+      locked_balance: 0
+    });
+
+    const accounts = await db('financial_accounts')
+      .where({ currency: 'NGN', is_active: true })
+      .whereIn('account_code', [
+        'PAYSTACK_CLEARING',
+        'CUSTOMER_WALLET_LIABILITY'
+      ]);
+
+    const clearing = accounts.find(
+      (a) => a.account_code === 'PAYSTACK_CLEARING'
+    );
+
+    const liability = accounts.find(
+      (a) => a.account_code === 'CUSTOMER_WALLET_LIABILITY'
+    );
+
+    if (!clearing || !liability) {
+      throw new Error('Funding accounts are missing');
+    }
+
+    // Fund only the temporary test wallet.
+    const funding = await ledgerService.postTransaction({
+      transactionType: 'wallet_funding',
+      description: 'Temporary wallet checkout test funding',
+      currency: 'NGN',
+      idempotencyKey: `wallet-success-funding-${makeId()}`,
+      initiatedBy: userId,
+      entries: [
+        {
+          accountId: clearing.id,
+          entryType: 'debit',
+          amount: '20000'
+        },
+        {
+          accountId: liability.id,
+          walletId,
+          entryType: 'credit',
+          amount: '20000'
+        }
+      ]
+    });
+
+    fundingTransactionId = funding.transactionId;
+
+    await Product.create({
+      productId,
+      vendorId: makeId(),
+      storeId: makeId(),
+      categoryId: makeId(),
+      name: 'Wallet Checkout Test Product',
+      slug: `wallet-checkout-${makeId()}`,
+      description: 'Temporary product for wallet payment testing',
+      priceKobo: 10000,
+      currency: 'NGN',
+      stockQuantity: 5,
+      status: 'active'
+    });
+  });
+
+  afterAll(async () => {
+    // Posted ledger transactions are immutable.
+    // Preserve financial test records for audit and reconciliation.
+    // Do not delete wallets, payments, orders or ledger entries here.
+    try {
+      await mongoose.disconnect();
+    } finally {
+      try {
+        await redis.quit();
+      } finally {
+        await db.destroy();
+      }
+    }
+  });
+
+  test('pays once, creates escrow, and confirms checkout', async () => {
+    const product = await Product.findOne({ productId });
+
+    const prepared = await prepareCheckout({
+      userId,
+      idempotencyKey: `wallet-success-${makeId()}`,
+      shippingAddress: '123 Test Street, Lagos, Nigeria',
+      paymentMethod: 'wallet',
+      cartOverride: {
+        currency: 'NGN',
+        hasUnavailableItems: false,
+        items: [
+          {
+            productId,
+            vendorId: product.vendorId,
+            name: product.name,
+            priceKobo: product.priceKobo,
+            currency: 'NGN',
+            quantity: 1,
+            available: true
+          }
+        ]
+      }
+    });
+
+    orderId = prepared.orderId;
+
+    const reserved = await reserveOrderStock(orderId);
+    expect(reserved.status).toBe('stock_reserved');
+
+    const result = await completeWalletCheckout({
+      userId,
+      orderId,
+      walletId
+    });
+
+    expect(result.status).toBe('successful');
+    expect(result.duplicate).toBe(false);
+    expect(result.escrowCount).toBe(1);
+
+    const balance = await db('wallet_balances')
+      .where({ wallet_id: walletId })
+      .first();
+
+    expect(String(balance.available_balance)).toBe('10000');
+
+    const escrows = await db('escrows')
+      .where({ payment_id: result.paymentId });
+
+    expect(escrows).toHaveLength(1);
+    expect(escrows[0].status).toBe('held');
+    expect(String(escrows[0].amount)).toBe('10000');
+
+    const order = await db('orders')
+      .where({ id: orderId })
+      .first();
+
+    expect(order.status).toBe('confirmed');
+
+    const checkout = await db('checkout_requests')
+      .where({ order_id: orderId })
+      .first();
+
+    expect(checkout.status).toBe('completed');
+
+
+    // Verify PostgreSQL stock commitment.
+    expect(result.stockStatus).toBe('stock_committed');
+
+    const pgReservations = await db('stock_reservations as sr')
+      .join('order_items as oi', 'sr.order_item_id', 'oi.id')
+      .join('vendor_orders as vo', 'oi.vendor_order_id', 'vo.id')
+      .where('vo.order_id', orderId)
+      .select('sr.id', 'sr.status');
+
+    expect(pgReservations).toHaveLength(1);
+    expect(pgReservations[0].status).toBe('committed');
+
+    // Verify MongoDB stock commitment.
+    const mongoReservation = await StockReservation.findOne({
+      reservationId: pgReservations[0].id
+    });
+
+    expect(mongoReservation).not.toBeNull();
+    expect(mongoReservation.status).toBe('committed');
+
+    const updatedProduct = await Product.findOne({ productId });
+    expect(updatedProduct.stockQuantity).toBe(4);
+
+    const repeated = await completeWalletCheckout({
+      userId,
+      orderId,
+      walletId
+    });
+
+    expect(repeated.duplicate).toBe(true);
+    expect(repeated.paymentId).toBe(result.paymentId);
+
+    const finalBalance = await db('wallet_balances')
+      .where({ wallet_id: walletId })
+      .first();
+
+    expect(String(finalBalance.available_balance)).toBe('10000');
+  });
+});

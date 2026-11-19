@@ -5,6 +5,7 @@ const redis = new Redis({
   host: env.REDIS_HOST,
   port: env.REDIS_PORT,
   password: env.REDIS_PASSWORD,
+  db: process.env.NODE_ENV === 'test' ? 15 : 0,
   maxRetriesPerRequest: 3,
   retryStrategy(times) {
     return Math.min(times * 500, 5000);

@@ -7,10 +7,21 @@ services:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
       MONGO_INITDB_DATABASE: ${MONGO_INITDB_DATABASE}
+    command:
+      - mongod
+      - --replSet
+      - rs0
+      - --bind_ip_all
+      - --keyFile
+      - /etc/mongo-keyfile
+
     ports:
       - "127.0.0.1:27017:27017"
+
     volumes:
       - mongodb_data:/data/db
+      - ./docker/mongodb/keyfile:/etc/mongo-keyfile:ro
+
     mem_limit: 512m
     healthcheck:
       test:

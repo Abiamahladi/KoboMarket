@@ -353,6 +353,7 @@ const paymentService = {
         referenceType: 'payment',
         referenceId: lockedPayment.id,
         initiatedBy: userId,
+        transaction: trx,
         entries: [
           {
             accountId: clearingAccount.id,
