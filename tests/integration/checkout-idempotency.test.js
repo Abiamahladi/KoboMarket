@@ -122,7 +122,6 @@ const runTest = async () => {
   }
 };
 
-runTest().catch((error) => {
-  console.error('FAILED:', error.message);
-  process.exitCode = 1;
-});
+test('checkout idempotency integration', async () => {
+  await runTest();
+}, 60000);

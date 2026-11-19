@@ -12,11 +12,11 @@ describe('Ledger transaction atomicity', () => {
   });
 
   test('rolls back ledger entries and wallet credit together', async () => {
-    const user = await db('users').select('id').first();
-
-    if (!user) {
-      throw new Error('A test user is required');
-    }
+    const [user] = await db('users')
+      .insert({
+        id: crypto.randomUUID()
+      })
+      .returning('id');
 
     const accounts = await db('financial_accounts')
       .where({ currency: 'NGN', is_active: true })
@@ -102,5 +102,9 @@ describe('Ledger transaction atomicity', () => {
 
     expect(ledgerRecord).toBeUndefined();
     expect(ledgerEntries).toHaveLength(0);
+
+    await db('users')
+      .where({ id: user.id })
+      .del();
   });
 });

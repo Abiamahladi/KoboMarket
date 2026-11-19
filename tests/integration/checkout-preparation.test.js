@@ -144,7 +144,6 @@ async function runTest() {
   }
 }
 
-runTest().catch((error) => {
-  console.error('FAILED:', error.message);
-  process.exitCode = 1;
-});
+test('checkout preparation integration', async () => {
+  await runTest();
+}, 60000);

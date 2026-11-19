@@ -15,11 +15,11 @@ describe('Wallet checkout protection', () => {
   let orderId;
 
   beforeAll(async () => {
-    const user = await db('users').select('id').first();
-
-    if (!user) {
-      throw new Error('A test user is required');
-    }
+    const [user] = await db('users')
+      .insert({
+        id: crypto.randomUUID()
+      })
+      .returning('id');
 
     userId = user.id;
 
@@ -47,6 +47,7 @@ describe('Wallet checkout protection', () => {
         user_id: userId,
         currency: 'NGN',
         status: 'pending',
+        payment_method: 'wallet',
         subtotal: 10000,
         shipping_fee: 0,
         discount_amount: 0,
@@ -89,6 +90,12 @@ describe('Wallet checkout protection', () => {
 
       await db('wallets')
         .where({ id: walletId })
+        .del();
+    }
+
+    if (userId) {
+      await db('users')
+        .where({ id: userId })
         .del();
     }
 

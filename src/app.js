@@ -15,6 +15,7 @@ const categoryRoutes = require('./modules/catalogue/category.routes');
 const cartRoutes = require('./modules/cart/cart.routes');
 const walletRoutes = require('./modules/wallets/wallet.routes');
 const paymentRoutes = require('./modules/payments/payment.routes');
+const escrowRoutes = require('./modules/escrow/escrow.routes');
 
 const app = express();
 
@@ -47,6 +48,7 @@ app.use('/api/categories', categoryRoutes);
 app.use('/api/cart', cartRoutes);
 app.use('/api/wallets', walletRoutes);
 app.use('/api/payments', paymentRoutes);
+app.use('/api/admin/escrows', escrowRoutes);
 
 // 404 handler
 app.use((req, res) => {

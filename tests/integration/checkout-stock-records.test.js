@@ -45,6 +45,7 @@ async function runTest() {
     trx = await db.transaction();
 
     const order = await createOrder({
+      paymentMethod: 'wallet',
       userId: user.id,
       cart,
       shippingAddress: '123 Test Street, Lagos, Nigeria',
@@ -114,7 +115,6 @@ async function runTest() {
   }
 }
 
-runTest().catch((error) => {
-  console.error('FAILED:', error.message);
-  process.exitCode = 1;
-});
+test('checkout stock records integration', async () => {
+  await runTest();
+}, 60000);

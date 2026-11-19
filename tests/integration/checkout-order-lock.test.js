@@ -83,7 +83,6 @@ async function runTest() {
   }
 }
 
-runTest().catch((error) => {
-  console.error('FAIL:', error.message);
-  process.exitCode = 1;
-});
+test('checkout order lock integration', async () => {
+  await runTest();
+}, 60000);
